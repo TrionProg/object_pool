@@ -1,3 +1,4 @@
+use std;
 
 #[derive(Eq,PartialEq,Copy,Clone,Debug)]
 pub struct ID{
@@ -18,5 +19,11 @@ impl ID{
             slot_index:0,
             unique_id:0,
         }
+    }
+}
+
+impl std::fmt::Display for ID{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f,"slot index:{}, unique id:{}",self.slot_index,self.unique_id)
     }
 }

@@ -5,8 +5,8 @@ use std::sync::RwLock;
 use std::sync::Arc;
 use std::sync::{RwLockWriteGuard, RwLockReadGuard};
 
-use growable::Slot;
-use growable::ID;
+pub use growable::Slot;
+pub use growable::ID;
 
 pub struct Pool<T:Slot>{
     inner:RwLock< growable::Pool<Arc<T>,T> >,

@@ -34,7 +34,7 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
         let insert_chunk_index=self.free;
         let insert_slot_index=self.chunks[self.free].get_free_slot_index();
         let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index, self.unique_id);
-        self.unique_id+=1;
+        self.unique_id+=1; //TODO:select set of unique ids if owerflow and maybe ID<T,T> with T limit
 
         slot.set_id(id);
         self.chunks[insert_chunk_index].insert(slot);
@@ -127,6 +127,19 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
         }
 
         len
+    }
+
+    pub fn future_id(&self) -> ID {
+        if self.free==self.chunks.len() {
+            ID::new(self.free*SLOTS_COUNT, self.unique_id)
+        }else{
+            if self.chunks[self.free].is_full() {
+                ID::new((self.free+1)*SLOTS_COUNT, self.unique_id)
+            }else{
+                let insert_slot_index=self.chunks[self.free].get_free_slot_index();
+                ID::new(self.free*SLOTS_COUNT + insert_slot_index, self.unique_id)
+            }
+        }
     }
 
     pub fn clear(&mut self) {

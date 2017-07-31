@@ -1,5 +1,6 @@
 
 use std::borrow::Borrow;
+use std::marker::PhantomData;
 
 use super::ID;
 use super::Slot;
@@ -46,7 +47,29 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
         self.chunks[insert_chunk_index].get_by_index_mut(insert_slot_index)
     }
 
-    pub fn get(&self, id:ID) -> Option<&SC> {
+    pub fn insert_limited(&mut self,mut slot:S) -> Option<&mut SC> {
+        if self.free==self.chunks.len() {
+            self.chunks.push( Box::new(Chunk::new()) );
+            self.last=self.free;
+        }
+
+        let insert_chunk_index=self.free;
+        let insert_slot_index=self.chunks[self.free].get_free_slot_index();
+        let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index, self.unique_id);
+        self.unique_id+=1; //TODO:select set of unique ids if owerflow and maybe ID<T,T> with T limit
+
+        slot.set_id(id);
+        self.chunks[insert_chunk_index].insert(slot);
+
+        while self.free<self.chunks.len() && self.chunks[self.free].is_full() {
+            self.free+=1;
+        }
+
+        Some(self.chunks[insert_chunk_index].get_by_index_mut(insert_slot_index))
+    }
+
+    pub fn get<T>(&self, id:T) -> Option<&SC> where T:Into<ID> {
+        let id:ID=id.into();
         let chunk_index=id.slot_index/SLOTS_COUNT;
 
         if chunk_index >= self.chunks.len() {
@@ -110,11 +133,11 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
     pub fn iter(&self) -> Iter<SC,S> {
         Iter::new(self)
     }
-    /*
+
     pub fn iter_mut(&mut self) -> IterMut<SC,S> {
         IterMut::new(self)
     }
-    */
+
     pub fn chunks_count(&self) -> usize {
         self.chunks.len()
     }
@@ -200,94 +223,57 @@ impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iterator for Iter<'a,SC,S>{
     }
 }
 
-/*'
-TODO:IterMut
 // IterMut
 
-pub struct IterMut<'a,SC:From<S> + Borrow<S> + BorrowMut<S> + 'a,S:Slot + 'a>{
-    pool:&'a Pool<SC,S>,
+pub struct IterMut<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a>{
+    pool:*mut Pool<SC,S>,
     chunk_index:usize,
     slot_index:usize,
+    _phantom_data:PhantomData<&'a mut ()>,
 }
 
-impl<'a,SC:From<S> + Borrow<S> + BorrowMut<S> + 'a,S:Slot + 'a> IterMut<'a,SC,S> {
-    pub fn new(pool:&'a mut Pool<SC,S>) -> Self {
+impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> IterMut<'a,SC,S> {
+    pub fn new(pool:&mut Pool<SC,S>) -> Self {
         IterMut{
-            pool:pool,
+            pool:pool as *mut Pool<SC,S>,
             chunk_index:0,
             slot_index:0,
-        }
-    }
-
-    fn next_(&'a mut self) -> Option<&'a mut SC> {
-    //fn next(&mut self) -> Option<Self::Item> {
-        loop{
-            if self.chunk_index >= self.pool.chunks.len() {
-                return None;
-            }
-
-            loop {
-                let chunk=&mut self.pool.chunks[self.chunk_index];
-                let slot=&mut chunk.slots[self.slot_index];
-
-                self.slot_index+=1;
-                let end_reached=self.slot_index==SLOTS_COUNT;
-
-                if end_reached {
-                    self.slot_index=0;
-                    self.chunk_index+=1;
-                }
-
-                match *slot{
-                    Some( ref mut slot_container ) => return Some(slot_container),
-                    None => {},
-                }
-
-                if end_reached {
-                    break;
-                }
-            }
+            _phantom_data:PhantomData,
         }
     }
 }
 
-impl<'a,SC:From<S> + Borrow<S> + BorrowMut<S> + 'a,S:Slot + 'a> Iterator for IterMut<'a,SC,S>{
+impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iterator for IterMut<'a,SC,S>{
     type Item=&'a mut SC;
 
-    fn next(&mut self) -> Option<& mut SC> {
-        self.next_()
-    }
-    /*
-    fn next(&'a mut self) -> Option<&'a mut SC> {
-    //fn next(&mut self) -> Option<Self::Item> {
-        loop{
-            if self.chunk_index >= self.pool.chunks.len() {
-                return None;
-            }
-
-            loop {
-                let chunk=&mut self.pool.chunks[self.chunk_index];
-                let slot=&mut chunk.slots[self.slot_index];
-
-                self.slot_index+=1;
-                let end_reached=self.slot_index==SLOTS_COUNT;
-
-                if end_reached {
-                    self.slot_index=0;
-                    self.chunk_index+=1;
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe{
+            loop{
+                if self.chunk_index >= (*self.pool).chunks.len() {
+                    return None;
                 }
 
-                match *slot{
-                    Some( ref mut slot_container ) => return Some(slot_container),
-                    None => {},
-                }
+                loop {
+                    let slot=&mut (*self.pool).chunks[self.chunk_index].slots[self.slot_index];
 
-                if end_reached {
-                    break;
+                    self.slot_index+=1;
+                    let end_reached=self.slot_index==SLOTS_COUNT;
+
+                    if end_reached {
+                        self.slot_index=0;
+                        self.chunk_index+=1;
+                    }
+
+                    match *slot{
+                        Some( ref mut slot_container ) => return Some(slot_container),
+                        None => {},
+                    }
+
+                    if end_reached {
+                        break;
+                    }
                 }
             }
         }
     }
-    */
 }
-*/

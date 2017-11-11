@@ -126,6 +126,15 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Chunk<SC,S> {
     }
 
     pub fn len(&self) -> usize{
+        /*
+        let mut len=0;
+
+        for slot in self.slots.into_iter() {
+            if slot.is_some() {
+                len+=1;
+            }
+        }
+        */
         self.len
     }
 }

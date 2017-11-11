@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use super::ID;
 use super::Slot;
 use super::chunk::Chunk;
+//use super::Iter;
 
 const SLOTS_COUNT:usize=64;
 
@@ -12,6 +13,7 @@ pub struct Pool<SC:From<S> + Borrow<S>,S:Slot>{
     chunks:Vec< Box<Chunk<SC,S>> >,
     free:usize,
     last:usize,
+    unique_id:usize,
 }
 
 impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
@@ -20,6 +22,7 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
             chunks:Vec::new(),
             free:0,
             last:0,
+            unique_id:1,
         }
     }
 
@@ -31,7 +34,8 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
 
         let insert_chunk_index=self.free;
         let insert_slot_index=self.chunks[self.free].get_free_slot_index();
-        let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index);
+        let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index, self.unique_id);
+        self.unique_id+=1; //TODO:select set of unique ids if owerflow and maybe ID<T,T> with T limit
 
         slot.set_id(id);
         self.chunks[insert_chunk_index].insert(slot);
@@ -51,7 +55,8 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
 
         let insert_chunk_index=self.free;
         let insert_slot_index=self.chunks[self.free].get_free_slot_index();
-        let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index);
+        let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index, self.unique_id);
+        self.unique_id+=1; //TODO:select set of unique ids if owerflow and maybe ID<T,T> with T limit
 
         slot.set_id(id);
         self.chunks[insert_chunk_index].insert(slot);
@@ -149,13 +154,13 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
 
     pub fn future_id(&self) -> ID {
         if self.free==self.chunks.len() {
-            ID::new(self.free*SLOTS_COUNT)
+            ID::new(self.free*SLOTS_COUNT, self.unique_id)
         }else{
             if self.chunks[self.free].is_full() {
-                ID::new((self.free+1)*SLOTS_COUNT)
+                ID::new((self.free+1)*SLOTS_COUNT, self.unique_id)
             }else{
                 let insert_slot_index=self.chunks[self.free].get_free_slot_index();
-                ID::new(self.free*SLOTS_COUNT + insert_slot_index)
+                ID::new(self.free*SLOTS_COUNT + insert_slot_index, self.unique_id)
             }
         }
     }

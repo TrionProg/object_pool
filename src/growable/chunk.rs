@@ -5,7 +5,6 @@ use std::ptr;
 use std::borrow::Borrow;
 
 use super::ID;
-use super::Slot;
 
 const SLOTS_COUNT:usize=64;
 
@@ -19,14 +18,14 @@ macro_rules! make_array {
     }}
 }
 
-pub struct Chunk<SC:From<S> + Borrow<S>,S:Slot>{
+pub struct Chunk<SC:From<S> + Borrow<S>,S>{
     pub slots:[Option<SC>;SLOTS_COUNT],
     free:usize,
     len:usize,
     _phantom_data:std::marker::PhantomData<S>,
 }
 
-impl<SC:From<S> + Borrow<S>,S:Slot> Chunk<SC,S> {
+impl<SC:From<S> + Borrow<S>,S> Chunk<SC,S> {
     pub fn new() -> Self {
         Chunk{
             slots:unsafe { make_array!(SLOTS_COUNT, None) },
@@ -63,11 +62,7 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Chunk<SC,S> {
 
         match self.slots[slot_index] {
             Some( ref slot_container ) => {
-                if slot_container.borrow().get_id()==id {
-                    Some( slot_container )
-                }else{
-                    None
-                }
+                Some( slot_container )
             },
             None => None,
         }
@@ -75,15 +70,6 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Chunk<SC,S> {
 
     pub fn get_mut(&mut self, id:ID) -> Option<&mut SC> {
         let slot_index=id.slot_index%SLOTS_COUNT;
-
-        match self.slots[slot_index] {
-            Some( ref slot_container ) => {
-                if slot_container.borrow().get_id()!=id {
-                    return None
-                }
-            },
-            None => return None,
-        }
 
         match self.slots[slot_index] {
             Some( ref mut slot_container ) => {
@@ -103,26 +89,18 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Chunk<SC,S> {
     pub fn remove(&mut self, id:ID) -> bool {
         let slot_index=id.slot_index%SLOTS_COUNT;
 
-        let remove=match self.slots[slot_index] {
-            Some( ref slot_container ) => {
-                if slot_container.borrow().get_id()==id {
-                    true
-                }else{
-                    false
-                }
-            },
-            None => false,
-        };
-
-        if remove {
-            self.slots[slot_index]=None;
-            if slot_index<self.free {
-                self.free=slot_index;
-            }
-            self.len-=1;
+        if self.slots[slot_index].is_none() {
+            return false;
         }
 
-        remove
+        self.slots[slot_index]=None;
+        self.len-=1;
+
+        if slot_index<self.free {
+            self.free=slot_index;
+        }
+
+        true
     }
 
     pub fn len(&self) -> usize{

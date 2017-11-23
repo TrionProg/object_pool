@@ -3,18 +3,17 @@ use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use super::ID;
-use super::Slot;
 use super::chunk::Chunk;
 
 const SLOTS_COUNT:usize=64;
 
-pub struct Pool<SC:From<S> + Borrow<S>,S:Slot>{
+pub struct Pool<SC:From<S> + Borrow<S>,S>{
     chunks:Vec< Box<Chunk<SC,S>> >,
     free:usize,
     last:usize,
 }
 
-impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
+impl<SC:From<S> + Borrow<S>,S> Pool<SC,S> {
     pub fn new() -> Self {
         Pool{
             chunks:Vec::new(),
@@ -23,7 +22,7 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
         }
     }
 
-    pub fn insert(&mut self,mut slot:S) -> &mut SC {
+    pub fn insert(&mut self,mut slot:S) -> ID {
         if self.free==self.chunks.len() {
             self.chunks.push( Box::new(Chunk::new()) );
             self.last=self.free;
@@ -33,14 +32,13 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
         let insert_slot_index=self.chunks[self.free].get_free_slot_index();
         let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index);
 
-        slot.set_id(id);
         self.chunks[insert_chunk_index].insert(slot);
 
         while self.free<self.chunks.len() && self.chunks[self.free].is_full() {
             self.free+=1;
         }
 
-        self.chunks[insert_chunk_index].get_by_index_mut(insert_slot_index)
+        id
     }
 
     pub fn insert_limited(&mut self,mut slot:S) -> Option<&mut SC> {
@@ -53,7 +51,6 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
         let insert_slot_index=self.chunks[self.free].get_free_slot_index();
         let id=ID::new(self.free*SLOTS_COUNT + insert_slot_index);
 
-        slot.set_id(id);
         self.chunks[insert_chunk_index].insert(slot);
 
         while self.free<self.chunks.len() && self.chunks[self.free].is_full() {
@@ -91,38 +88,39 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
             return false;
         }
 
-        let removed=self.chunks[chunk_index].remove(id);
-        if removed {
-            if chunk_index<self.free {
-                self.free=chunk_index;
-            }
+        if !self.chunks[chunk_index].remove(id) {
+            return false;
+        }
 
-            if self.chunks[chunk_index].is_empty() && chunk_index==self.last {
-                let mut clear_all=false;
-                loop {
-                    if self.last>0 {
-                        self.last-=1;
-                    }else{
-                        clear_all=true;
-                        break;
-                    }
+        if chunk_index<self.free {
+            self.free=chunk_index;
+        }
 
-                    if !self.chunks[self.last].is_empty() {
-                        break;
-                    }
+        if self.chunks[chunk_index].is_empty() && chunk_index==self.last {
+            let mut clear_all=false;
+            loop {
+                if self.last>0 {
+                    self.last-=1;
+                }else{
+                    clear_all=true;
+                    break;
                 }
 
-                if clear_all {
-                    self.chunks.clear();
-                }else{
-                    if self.last*2<=self.chunks.len(){
-                        self.chunks.truncate(self.last+1);
-                    }
+                if !self.chunks[self.last].is_empty() {
+                    break;
+                }
+            }
+
+            if clear_all {
+                self.chunks.clear();
+            }else{
+                if self.last*2<=self.chunks.len(){
+                    self.chunks.truncate(self.last+1);
                 }
             }
         }
 
-        removed
+        true
     }
 
     pub fn iter(&self) -> Iter<SC,S> {
@@ -169,13 +167,13 @@ impl<SC:From<S> + Borrow<S>,S:Slot> Pool<SC,S> {
 
 // Iter
 
-pub struct Iter<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a>{
+pub struct Iter<'a,SC:From<S> + Borrow<S> + 'a,S:'a>{
     pool:&'a Pool<SC,S>,
     chunk_index:usize,
     slot_index:usize,
 }
 
-impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iter<'a,SC,S> {
+impl<'a,SC:From<S> + Borrow<S> + 'a,S:'a> Iter<'a,SC,S> {
     pub fn new(pool:&'a Pool<SC,S>) -> Self {
         Iter{
             pool:pool,
@@ -185,7 +183,7 @@ impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iter<'a,SC,S> {
     }
 }
 
-impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iterator for Iter<'a,SC,S>{
+impl<'a,SC:From<S> + Borrow<S> + 'a,S: 'a> Iterator for Iter<'a,SC,S>{
     type Item=&'a SC;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -220,14 +218,14 @@ impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iterator for Iter<'a,SC,S>{
 
 // IterMut
 
-pub struct IterMut<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a>{
+pub struct IterMut<'a,SC:From<S> + Borrow<S> + 'a,S: 'a>{
     pool:*mut Pool<SC,S>,
     chunk_index:usize,
     slot_index:usize,
     _phantom_data:PhantomData<&'a mut ()>,
 }
 
-impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> IterMut<'a,SC,S> {
+impl<'a,SC:From<S> + Borrow<S> + 'a,S: 'a> IterMut<'a,SC,S> {
     pub fn new(pool:&mut Pool<SC,S>) -> Self {
         IterMut{
             pool:pool as *mut Pool<SC,S>,
@@ -238,7 +236,7 @@ impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> IterMut<'a,SC,S> {
     }
 }
 
-impl<'a,SC:From<S> + Borrow<S> + 'a,S:Slot + 'a> Iterator for IterMut<'a,SC,S>{
+impl<'a,SC:From<S> + Borrow<S> + 'a,S:'a > Iterator for IterMut<'a,SC,S>{
     type Item=&'a mut SC;
 
     fn next(&mut self) -> Option<Self::Item> {
